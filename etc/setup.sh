@@ -45,45 +45,52 @@ gitPullFunction() {
   local dir=$1
   local repo=$2
   if [ ! -d "$dir" ]; then
-    pushd "$(dirname "$dir")"
+    pushd "$(dirname "$dir")" > /dev/null
 
     git clone $repo
     OK=$?
-    popd
+    popd > /dev/null
     if [ $OK -ne 0 ]; then
       echo "failed to clone $repo"
       rm -rf "$dir"
       return 1
     fi
+    echo "commit id: `git rev-parse HEAD`"
     return 0
   else
-    pushd $dir
+    pushd $dir > /dev/null
     if [ $? -ne 0 ]; then
       echo "invalid git repo $dir"
       return 1
     fi
+    local cid=`git rev-parse HEAD`
     git fetch
     if [ $? -ne 0 ]; then
       echo "failed to fetch repo $dir"
-      popd
+      popd > /dev/null
       return 1
     fi
     local gitwork=`git cherry master origin/master`
     if [ $? -ne 0 ]; then
       echo "failed to cherry pick repo $dir"
-      popd
+      popd > /dev/null
       return 1
     fi
     if [ "$gitwork" != "" ]; then
       git merge
       if [ $? -ne 0 ]; then
         echo "failed to merge pick repo $dir"
-        popd
+        popd > /dev/null
         return 1
       fi
     fi
-    echo $gitwork
-    popd
+    local newcid=`git rev-parse HEAD`
+    if [ "$cid" != "$newcid" ]; then
+       echo "$cid!=$newcid"
+    else
+       echo ""
+    fi
+    popd > /dev/null
     return 0
   fi
 }
@@ -98,7 +105,8 @@ if [ -f "$HOME/bin/MODE" ]; then
 fi
 
 # update main repo
-UPDATED=`gitPullFunction $HOME/netfilter_prod $gitprod`
+echo "updating prod repo - $gitprod"
+COMMITID=`gitPullFunction $HOME/netfilter_prod $gitprod`
 if [ $? -ne 0 ]; then
 echo "failed to pull $HOME/netfilter_prod"
 exit 1
@@ -109,8 +117,8 @@ TARGET=${HOME}/netfilter_prod
 # check if we are in testing mode
 NEWMODE=`setRuntimeEnvironmentFunction`
 if [ "$NEWMODE" == "test" ]; then
-  echo "updating test repo"
-  UPDATED=`gitPullFunction $HOME/netfilter_test $gittest`
+  echo "updating test repo - $gittest"
+  COMMITID=`gitPullFunction $HOME/netfilter_test $gittest`
   if [ $? -ne 0 ]; then 
     echo "failed to pull $HOME/netfilter_test"
     exit 1
@@ -153,7 +161,7 @@ if [ $? -ne 0 ]; then
   NEWVERSION="noversion"
 fi
 
-if [ "$CURVERSION" == "$NEWVERSION" ] && [ "$CURMODE" == "$NEWMODE" ] && [ "$UPDATED" == "" ]; then
+if [ "$CURVERSION" == "$NEWVERSION" ] && [ "$CURMODE" == "$NEWMODE" ] && [ "$COMMITID" == "" ]; then
   echo "no changes to netfilter $CURVERSION $CURMODE. exiting..." 
   exit 0
 fi
@@ -161,6 +169,7 @@ fi
 # create new links
 #
 echo "Configuring netfilter $NEWVERSION in $NEWMODE mode using $TARGET"
+echo "[version=$CURVERSION->$NEWVERSION   mode=$CURMODE->$NEWMODE   CID=$COMMITID]"
 
 rm ${HOME}/bin/netfilter 
 ln ${TARGET}/bin/netfilter ${HOME}/bin/netfilter # cannot be symlink so we don't overwrite in next git pull
@@ -172,6 +181,8 @@ rm -f ${HOME}/bin/download.script
 ln -s ${TARGET}/etc/download.script ${HOME}/bin/download.script
 rm -f ${HOME}/bin/firewall.sh
 ln -s ${TARGET}/etc/firewall.sh ${HOME}/bin/firewall.sh
+rm -f ${HOME}/bin/setup.sh
+ln -s ${TARGET}/etc/setup.sh ${HOME}/bin/setup.sh
 
 
 # setup systemd services

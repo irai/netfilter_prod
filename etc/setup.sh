@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Return the mode from config file
 getModeFunction() {
   local mode=prod
   if [ -f "$NETFILTER/private/config.yaml" ]; then
